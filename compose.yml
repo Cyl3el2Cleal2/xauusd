@@ -1,0 +1,10 @@
+services:
+  db:
+    image: postgres:18 # Specifies the PostgreSQL 18 image
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: backend
+    ports:
+      - '5432:5432'
