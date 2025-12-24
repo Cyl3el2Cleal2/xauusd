@@ -354,17 +354,3 @@ async def stream_with_retry(stream_func, symbol: str, client_id: str, max_retrie
 
             # Cleanup and restart
             await driver_pool.cleanup_driver(client_id)
-
-async def cleanup_all_resources():
-    """Clean up all WebDriver resources"""
-    client_ids = list(driver_pool.drivers.keys())
-    for client_id in client_ids:
-        await driver_pool.cleanup_driver(client_id)
-    logger.info("All resources cleaned up")
-
-def get_driver_stats() -> Dict[str, int]:
-    """Get statistics about driver usage"""
-    return {
-        "active_drivers": driver_pool.get_active_count(),
-        "cached_elements": sum(len(cache) for cache in driver_pool.element_cache.values()),
-    }
