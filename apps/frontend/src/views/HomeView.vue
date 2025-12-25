@@ -1,22 +1,46 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import VueApexCharts from 'vue3-apexcharts' // Ensure this is installed
-import TheWelcome from '../components/TheWelcome.vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { usePrice } from '@/apis/price'
+import type ApexCharts from 'apexcharts'
 
-// 1. Define Template Ref for the chart component
-const chart = ref<any>(null)
+interface ChartData {
+  x: number
+  y: number
+}
 
-// 2. State & Constants
-const XAXISRANGE = 777600000 // Example range value
-let lastDate = 0
-let data: any[] = []
+const chart = ref<ApexCharts | null>(null)
+const { gold96Price, goldSpotPrice, streamSymbol } = usePrice()
 
-// 3. Reactive Series (ApexCharts watches this)
-const series = ref([{
-  data: data.slice()
-}])
+// Store chart data
+const chartData = ref<ChartData[]>([])
+const XAXISRANGE = 300000
 
-// 4. Chart Options (Can stay as a plain object)
+// Watch for price updates and update chart data
+watch(goldSpotPrice, (val) => {
+  if (!val || !val.price) return
+
+  const cleanPrice = parseFloat(val.price.toString().replace(/,/g, ''))
+
+  const newPrice: ChartData = {
+    x: val.time, // Ensure this is a timestamp in ms
+    y: cleanPrice,
+  }
+  console.log('New price data:', newPrice)
+  chartData.value.push(newPrice)
+
+  // Limit data array size to prevent memory lag
+  if (chartData.value.length > 200) {
+    chartData.value.shift()
+  }
+})
+
+watch(gold96Price, (val) => {
+  if (!val) return
+  const buyPrice = parseFloat(val.buy_price.toString())
+  const sellPrice = parseFloat(val.sell_price.toString())
+})
+
+// Chart configuration
 const chartOptions = {
   chart: {
     id: 'realtime',
@@ -25,76 +49,63 @@ const chartOptions = {
     animations: {
       enabled: true,
       easing: 'linear',
-      dynamicAnimation: { speed: 1000 }
+      dynamicAnimation: { speed: 1000 },
     },
     toolbar: { show: false },
-    zoom: { enabled: false }
+    zoom: { enabled: true },
   },
-  dataLabels: { enabled: false },
-  stroke: { curve: 'smooth' },
-  title: { text: 'Realtime Gold Strategy', align: 'left' },
+  stroke: { curve: 'smooth', width: 3 },
   xaxis: {
     type: 'datetime',
     range: XAXISRANGE,
   },
-  yaxis: { max: 100 },
-  legend: { show: false },
+  yaxis: {
+    labels: {
+      formatter: (val: number) => val.toFixed(2),
+    },
+    forceNiceScale: true,
+  },
 }
 
-// Mock functions (replace with your actual logic)
-const getNewSeries = (baseval: number, yrange: {min: number, max: number}) => {
-  const newDate = baseval + 86400000
-  lastDate = newDate
-  data.push({
-    x: newDate,
-    y: Math.floor(Math.random() * (yrange.max - yrange.min + 1)) + yrange.min
-  })
-}
+// Use reactive series that's connected to chartData
+const series = ref([
+  {
+    name: 'Gold Spot Price',
+    data: chartData.value,
+  },
+])
 
-const resetData = () => {
-  data = data.slice(data.length - 10, data.length)
-}
-
-// 5. Lifecycle Hooks
-let interval1: any, interval2: any
+let interval1: number
 
 onMounted(() => {
-  // Update loop
+  streamSymbol(gold96Price, 'gold96')
+  streamSymbol(goldSpotPrice, 'spot')
+
+  // Update chart periodically with latest data
   interval1 = window.setInterval(() => {
-    getNewSeries(lastDate, { min: 10, max: 90 })
-    
-    // Accessing the chart instance via ref
-    if (chart.value) {
-      chart.value.updateSeries([{
-        data: data
-      }])
+    if (chart.value && chartData.value.length > 0) {
+      chart.value.updateSeries([
+        {
+          data: [...chartData.value], // Pass a shallow copy
+        },
+      ])
     }
   }, 1000)
-
-  // Memory leak prevention loop
-  interval2 = window.setInterval(() => {
-    resetData()
-    if (chart.value) {
-      chart.value.updateSeries([{ data }], false, true)
-    }
-  }, 60000)
 })
 
-// Clean up intervals when component is destroyed
 onUnmounted(() => {
   clearInterval(interval1)
-  clearInterval(interval2)
 })
 </script>
 
 <template>
   <main>
     <div id="chart">
-      <apexchart 
-        type="line" 
-        height="350" 
-        ref="chart" 
-        :options="chartOptions" 
+      <apexchart
+        type="line"
+        height="350"
+        ref="chart"
+        :options="chartOptions"
         :series="series"
       ></apexchart>
     </div>
