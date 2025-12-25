@@ -5,114 +5,180 @@ from typing import AsyncGenerator, Dict, Optional, Any
 import logging
 from datetime import datetime
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import WebDriverException, NoSuchElementException, TimeoutException
+from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+
+# Database imports
+from src.db import get_async_session
+from src.schemas import GoldPriceCreate, Gold96PriceCreate
+from src.services.price_service import PriceService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class WebDriverPool:
-    """Manages WebDriver instances with connection pooling and caching"""
+# Simple stealth implementation to avoid dependency issues
+async def apply_stealth(page: Page):
+    """Apply basic stealth techniques to avoid detection"""
+    await page.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined,
+        });
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5],
+        });
+        Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en'],
+        });
+        window.chrome = {
+            runtime: {},
+        };
+    """)
+
+class PlaywrightPool:
+    """Manages Playwright browser instances with connection pooling"""
 
     def __init__(self):
-        self.drivers: Dict[str, webdriver.Chrome] = {}
-        self.element_cache: Dict[str, Dict[str, Any]] = {}
+        self.browsers: Dict[str, Browser] = {}
+        self.contexts: Dict[str, BrowserContext] = {}
+        self.pages: Dict[str, Page] = {}
         self.lock = asyncio.Lock()
+        self.max_browsers = 3  # Limit to 3 browser instances
 
-    async def get_driver(self, client_id: str) -> webdriver.Chrome:
-        """Get or create a WebDriver instance for a client"""
+    async def get_page(self, client_id: str) -> Page:
+        """Get or create a Playwright page for a client"""
         async with self.lock:
-            if client_id not in self.drivers:
-                options = Options()
-                options.add_argument("--headless")
-                options.add_argument("--no-sandbox")
-                options.add_argument("--disable-dev-shm-usage")
-                options.add_argument("--disable-gpu")
-                options.add_argument("--window-size=1920,1080")
-                options.add_argument("--disable-extensions")
-                options.add_argument("--disable-plugins")
-                options.add_argument("--disable-images")
-                options.add_argument("--disable-javascript")
-                options.add_argument("--blink-settings=imagesEnabled=false")
-                options.add_argument("--disable-web-security")
-                options.add_argument("--allow-running-insecure-content")
+            if client_id not in self.browsers:
+                # Create new browser
+                playwright = await async_playwright().start()
 
-                driver = webdriver.Chrome(options=options)
-                driver.set_page_load_timeout(15)
-                driver.set_script_timeout(10)
+                browser = await playwright.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--disable-extensions',
+                        '--disable-plugins',
+                        '--disable-images',
+                        '--disable-web-security',
+                        '--allow-running-insecure-content',
+                        '--disable-background-timer-throttling',
+                        '--disable-backgrounding-occluded-windows',
+                        '--disable-renderer-backgrounding',
+                    ]
+                )
 
-                self.drivers[client_id] = driver
-                self.element_cache[client_id] = {}
-                logger.info(f"Created new WebDriver for client: {client_id}")
+                self.browsers[client_id] = browser
 
-            return self.drivers[client_id]
+                # Create context with stealth
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    viewport={'width': 1920, 'height': 1080},
+                    ignore_https_errors=True
+                )
+                self.contexts[client_id] = context
 
-    async def cleanup_driver(self, client_id: str):
-        """Clean up driver resources for a client"""
+                # Create page
+                page = await context.new_page()
+                await apply_stealth(page)  # Apply stealth to avoid detection
+                self.pages[client_id] = page
+
+                # Set timeouts
+                page.set_default_timeout(30000)  # 30 seconds
+                page.set_default_navigation_timeout(45000)  # 45 seconds
+
+                logger.info(f"Created new Playwright page for client: {client_id}")
+
+            return self.pages[client_id]
+
+    async def cleanup_page(self, client_id: str):
+        """Clean up page resources for a client"""
         async with self.lock:
-            if client_id in self.drivers:
-                try:
-                    self.drivers[client_id].quit()
-                    logger.info(f"Cleaned up WebDriver for client: {client_id}")
-                except Exception as e:
-                    logger.error(f"Error quitting driver for {client_id}: {e}")
-                finally:
-                    del self.drivers[client_id]
-
-            if client_id in self.element_cache:
-                del self.element_cache[client_id]
-
-    async def safe_find_element(
-        self,
-        client_id: str,
-        by: By,
-        value: str,
-        timeout: int = 5,
-        cache_key: str = None
-    ) -> Optional[Any]:
-        """Safely find element with caching and error handling"""
-        driver = await self.get_driver(client_id)
-
-        # Check cache first
-        if cache_key and cache_key in self.element_cache.get(client_id, {}):
             try:
-                element = self.element_cache[client_id][cache_key]
-                if element.is_displayed() and element.is_enabled():
-                    return element
-            except:
-                # Element is stale, remove from cache
-                del self.element_cache[client_id][cache_key]
+                if client_id in self.pages:
+                    await self.pages[client_id].close()
 
-        try:
-            wait = WebDriverWait(driver, timeout)
-            element = wait.until(EC.presence_of_element_located((by, value)))
+                if client_id in self.contexts:
+                    await self.contexts[client_id].close()
 
-            # Cache the element
-            if cache_key:
-                if client_id not in self.element_cache:
-                    self.element_cache[client_id] = {}
-                self.element_cache[client_id][cache_key] = element
+                if client_id in self.browsers:
+                    await self.browsers[client_id].close()
 
-            return element
-        except (TimeoutException, NoSuchElementException) as e:
-            logger.warning(f"Element not found {by}={value} for client {client_id}: {e}")
-            return None
+                # Remove from all dictionaries
+                self.pages.pop(client_id, None)
+                self.contexts.pop(client_id, None)
+                self.browsers.pop(client_id, None)
+
+                logger.info(f"Cleaned up Playwright resources for client: {client_id}")
+
+            except Exception as e:
+                logger.error(f"Error cleaning up Playwright for {client_id}: {e}")
 
     def get_active_count(self) -> int:
-        """Get count of active drivers"""
-        return len(self.drivers)
+        """Get count of active pages"""
+        return len(self.pages)
 
-# Global driver pool
-driver_pool = WebDriverPool()
+# Global page pool
+page_pool = PlaywrightPool()
 
 def current_time_ms() -> int:
     """Get current timestamp in milliseconds"""
     return int(time.time() * 1000)
+
+def convertOunceToThaiBaht(spot):
+    """Convert gold spot price from USD/ounce to Thai Baht"""
+    try:
+        # Handle comma as thousands separator
+        if isinstance(spot, str):
+            spot = spot.replace(',', '')
+
+        # Fix 1usd = 31.07baht, gold is 0.473 ounces per baht weight
+        price = (float(spot)+2)*31.07*0.473
+        return round(price, 2)
+    except (ValueError, TypeError):
+        return None
+
+async def save_gold_price_to_db(price_data: dict):
+    """Save gold price data to database"""
+    try:
+        from src.db import async_session_maker
+        async with async_session_maker() as session:
+            # Extract USD price before conversion if available
+            usd_price = price_data.get('usd_price')
+            baht_price = price_data.get('price')
+
+            create_data = GoldPriceCreate(
+                symbol=price_data['symbol'],
+                price=baht_price,
+                usd_price=usd_price,
+                timestamp=datetime.utcnow(),
+                source="investing.com"
+            )
+
+            await PriceService.save_gold_price(session, create_data)
+            logger.debug(f"Saved gold price to database: {baht_price}")
+
+    except Exception as e:
+        logger.error(f"Failed to save gold price to database: {e}")
+
+async def save_gold96_price_to_db(price_data: dict):
+    """Save gold 96 price data to database"""
+    try:
+        from src.db import async_session_maker
+        async with async_session_maker() as session:
+            create_data = Gold96PriceCreate(
+                symbol=price_data['symbol'],
+                buy_price=float(price_data['buy_price'].replace(',', '')),
+                sell_price=float(price_data['sell_price'].replace(',', '')),
+                timestamp=datetime.utcnow(),
+                source="goldtraders.or.th"
+            )
+
+            await PriceService.save_gold96_price(session, create_data)
+            logger.debug(f"Saved gold 96 price to database: Buy={price_data['buy_price']}, Sell={price_data['sell_price']}")
+
+    except Exception as e:
+        logger.error(f"Failed to save gold 96 price to database: {e}")
 
 async def create_sse_data(data: dict) -> str:
     """Create properly formatted SSE data"""
@@ -126,58 +192,82 @@ class BasePriceStreamer:
         self.url = url
         self.consecutive_errors = 0
         self.max_consecutive_errors = 5
-        self.base_poll_interval = 2.0
+        self.base_poll_interval = 10.0  # Longer intervals for Playwright
+        self.last_error_time = 0
 
     async def initialize_page(self, client_id: str):
         """Initialize the page for scraping"""
-        driver = await driver_pool.get_driver(client_id)
-        driver.get(self.url)
-        await asyncio.sleep(3)  # Initial page load
+        page = await page_pool.get_page(client_id)
+
+        try:
+            # Navigate to URL with anti-detection measures
+            await page.goto(self.url, wait_until="domcontentloaded", timeout=45000)
+            await page.wait_for_timeout(3000)  # Wait for page to fully load
+
+            # Random mouse movement to appear more human-like
+            await page.mouse.move(100, 100)
+            await page.wait_for_timeout(500)
+            await page.mouse.move(200, 200)
+            await page.wait_for_timeout(500)
+
+        except Exception as e:
+            logger.warning(f"Error during page initialization for {self.symbol}: {e}")
+            raise
 
     def get_adaptive_poll_interval(self) -> float:
-        """Get adaptive polling interval based on time"""
+        """Get adaptive polling interval based on time and error rate"""
         current_hour = datetime.now().hour
-        if 9 <= current_hour <= 17:  # Market hours
-            return self.base_poll_interval * 0.75  # Faster during market hours
+
+        # Increase polling time if we had recent errors
+        if time.time() - self.last_error_time < 300:  # 5 minutes
+            return self.base_poll_interval * 2
+        elif 9 <= current_hour <= 17:  # Market hours
+            return self.base_poll_interval  # 10 seconds during market hours
         else:
-            return self.base_poll_interval * 1.5  # Slower during off hours
+            return self.base_poll_interval * 1.5  # 15 seconds during off hours
 
     async def handle_error(self, client_id: str, error: Exception):
         """Handle errors with smart recovery"""
         self.consecutive_errors += 1
+        self.last_error_time = time.time()
         logger.warning(f"Error in {self.symbol} stream (attempt {self.consecutive_errors}): {error}")
 
         if self.consecutive_errors >= self.max_consecutive_errors:
             try:
-                driver = await driver_pool.get_driver(client_id)
-                driver.refresh()
-                await asyncio.sleep(3)
+                page = await page_pool.get_page(client_id)
 
-                # Clear element cache after refresh
-                if client_id in driver_pool.element_cache:
-                    driver_pool.element_cache[client_id].clear()
+                # Try to refresh the page
+                await page.reload(wait_until="domcontentloaded", timeout=45000)
+                await page.wait_for_timeout(3000)
 
                 logger.info(f"Refreshed page for {self.symbol} stream")
                 self.consecutive_errors = 0
+
             except Exception as refresh_error:
                 logger.error(f"Failed to refresh page: {refresh_error}")
-                raise Exception("Failed to recover from streaming errors")
-
-        await asyncio.sleep(2)  # Brief pause before retry
+                # Try to recreate the page
+                await page_pool.cleanup_page(client_id)
+                await self.initialize_page(client_id)
+                self.consecutive_errors = 0
+        else:
+            # Exponential backoff
+            backoff_time = min(60, 5 * (2 ** (self.consecutive_errors - 1)))
+            await asyncio.sleep(backoff_time)
 
     def reset_error_count(self):
         """Reset consecutive error count"""
         self.consecutive_errors = 0
+        self.last_error_time = 0
 
 class GoldSpotStreamer(BasePriceStreamer):
-    """Gold spot price streamer"""
+    """Gold spot price streamer using Playwright"""
 
     def __init__(self):
         super().__init__("spot", "https://th.investing.com/commodities/gold")
-        self.last_price = ""
+        self.last_price = 0
 
     async def stream_prices(self, client_id: str) -> AsyncGenerator[str, None]:
-        """Stream gold spot prices"""
+        """Stream gold spot prices using Playwright"""
         await self.initialize_page(client_id)
 
         try:
@@ -185,39 +275,69 @@ class GoldSpotStreamer(BasePriceStreamer):
 
             while True:
                 try:
-                    price_element = await driver_pool.safe_find_element(
-                        client_id,
-                        By.CSS_SELECTOR,
-                        '[data-test="instrument-price-last"]',
-                        timeout=3,
-                        cache_key="instrument_price_last"
-                    )
+                    page = await page_pool.get_page(client_id)
+
+                    # Wait for price element with timeout
+                    selector = '[data-test="instrument-price-last"]'
+
+                    try:
+                        await page.wait_for_selector(selector, timeout=15000)
+                        price_element = await page.query_selector(selector)
+                    except:
+                        # Try alternative selectors
+                        alternative_selectors = [
+                            '.instrument-price_last',
+                            '[data-symbol="XAU"]',
+                            'span[class*="price"]',
+                            'div[class*="price"]',
+                        ]
+
+                        for alt_selector in alternative_selectors:
+                            try:
+                                price_element = await page.query_selector(alt_selector)
+                                if price_element:
+                                    break
+                            except:
+                                price_element = None
+                                continue
+                        else:
+                            raise Exception("Price element not found with any selector")
 
                     if not price_element:
                         await self.handle_error(client_id, Exception("Price element not found"))
                         continue
 
-                    current_price = price_element.text.strip()
+                    # Get price text
+                    current_price = await price_element.inner_text()
+                    current_price = current_price.strip()
+
+                    usd_price = current_price
+                    baht_price = convertOunceToThaiBaht(current_price)
 
                     # Only send data if price changed
-                    if current_price and self.last_price != current_price:
-                        self.last_price = current_price
+                    if baht_price and self.last_price != baht_price:
+                        self.last_price = baht_price
                         self.reset_error_count()
 
                         data = {
                             "symbol": self.symbol,
-                            "price": current_price,
+                            "price": baht_price,
+                            "usd_price": usd_price,
                             "time": current_time_ms(),
                             "type": "price_update"
                         }
 
-                        logger.debug(f"Gold spot price update: {current_price}")
+                        logger.debug(f"Gold spot price update: {baht_price}")
                         yield await create_sse_data(data)
 
-                    # Adaptive polling
-                    await asyncio.sleep(self.get_adaptive_poll_interval())
+                        # Save to database asynchronously
+                        asyncio.create_task(save_gold_price_to_db(data))
 
-                except WebDriverException as e:
+                    # Adaptive polling
+                    poll_interval = self.get_adaptive_poll_interval()
+                    await asyncio.sleep(poll_interval)
+
+                except Exception as e:
                     await self.handle_error(client_id, e)
 
         except Exception as e:
@@ -232,7 +352,7 @@ class GoldSpotStreamer(BasePriceStreamer):
             raise
 
 class Gold96Streamer(BasePriceStreamer):
-    """Gold 96 price streamer"""
+    """Gold 96 price streamer using Playwright"""
 
     def __init__(self):
         super().__init__("gold96", "https://www.goldtraders.or.th/")
@@ -240,7 +360,7 @@ class Gold96Streamer(BasePriceStreamer):
         self.last_sell_price = ""
 
     async def stream_prices(self, client_id: str) -> AsyncGenerator[str, None]:
-        """Stream gold 96 prices"""
+        """Stream gold 96 prices using Playwright"""
         await self.initialize_page(client_id)
 
         try:
@@ -248,29 +368,59 @@ class Gold96Streamer(BasePriceStreamer):
 
             while True:
                 try:
-                    # Find both elements
-                    buy_element = await driver_pool.safe_find_element(
-                        client_id,
-                        By.ID,
-                        "DetailPlace_uc_goldprices1_lblBLBuy",
-                        timeout=3,
-                        cache_key="gold96_buy_price"
-                    )
+                    page = await page_pool.get_page(client_id)
 
-                    sell_element = await driver_pool.safe_find_element(
-                        client_id,
-                        By.ID,
-                        "DetailPlace_uc_goldprices1_lblBLSell",
-                        timeout=3,
-                        cache_key="gold96_sell_price"
-                    )
+                    # Wait for page to be ready
+                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    await page.wait_for_timeout(2000)
+
+                    # Find buy price element
+                    buy_element = None
+                    buy_selectors = [
+                        "#DetailPlace_uc_goldprices1_lblBLBuy",
+                        '[id*="lblBLBuy"]',
+                        'span:has-text("รับซื้อ")',
+                        'div:has-text("รับซื้อ")',
+                    ]
+
+                    for selector in buy_selectors:
+                        try:
+                            buy_element = await page.query_selector(selector)
+                            if buy_element:
+                                break
+                        except:
+                            continue
+
+                    # Find sell price element
+                    sell_element = None
+                    sell_selectors = [
+                        "#DetailPlace_uc_goldprices1_lblBLSell",
+                        '[id*="lblBLSell"]',
+                        'span:has-text("ขาย")',
+                        'div:has-text("ขาย")',
+                    ]
+
+                    for selector in sell_selectors:
+                        try:
+                            sell_element = await page.query_selector(selector)
+                            if sell_element:
+                                break
+                        except:
+                            continue
 
                     if not buy_element or not sell_element:
                         await self.handle_error(client_id, Exception("Price elements not found"))
                         continue
 
-                    current_buy_price = buy_element.text.strip()
-                    current_sell_price = sell_element.text.strip()
+                    current_buy_price = await buy_element.inner_text()
+                    current_sell_price = await sell_element.inner_text()
+
+                    current_buy_price = current_buy_price.strip()
+                    current_sell_price = current_sell_price.strip()
+
+                    # Clean up comma separators for float conversion
+                    current_buy_price = current_buy_price.replace(',', '')
+                    current_sell_price = current_sell_price.replace(',', '')
 
                     # Only send data if prices changed
                     if (current_buy_price and current_sell_price and
@@ -292,10 +442,14 @@ class Gold96Streamer(BasePriceStreamer):
                         logger.debug(f"Gold 96 price update - Buy: {current_buy_price}, Sell: {current_sell_price}")
                         yield await create_sse_data(data)
 
-                    # Adaptive polling
-                    await asyncio.sleep(self.get_adaptive_poll_interval())
+                        # Save to database asynchronously
+                        asyncio.create_task(save_gold96_price_to_db(data))
 
-                except WebDriverException as e:
+                    # Adaptive polling
+                    poll_interval = self.get_adaptive_poll_interval()
+                    await asyncio.sleep(poll_interval)
+
+                except Exception as e:
                     await self.handle_error(client_id, e)
 
         except Exception as e:
@@ -326,7 +480,7 @@ async def gold_96_price_stream(client_id: str) -> AsyncGenerator[str, None]:
 async def stream_with_retry(stream_func, symbol: str, client_id: str, max_retries: int = 3) -> AsyncGenerator[str, None]:
     """Stream with automatic retry and error handling"""
     retry_count = 0
-    base_delay = 1
+    base_delay = 10  # Longer base delay for Playwright
 
     while retry_count < max_retries:
         try:
@@ -348,9 +502,25 @@ async def stream_with_retry(stream_func, symbol: str, client_id: str, max_retrie
                 yield await create_sse_data(error_data)
                 break
 
-            # Exponential backoff
+            # Exponential backoff with longer delays
             delay = base_delay * (2 ** (retry_count - 1))
             await asyncio.sleep(delay)
 
             # Cleanup and restart
-            await driver_pool.cleanup_driver(client_id)
+            await page_pool.cleanup_page(client_id)
+
+# Lifecycle management functions for FastAPI
+async def initialize_ticker():
+    """Initialize the ticker system"""
+    logger.info("Ticker system initialized with Playwright")
+    # No specific initialization needed for Playwright
+
+async def shutdown_ticker():
+    """Shutdown the ticker system"""
+    logger.info("Shutting down ticker system...")
+
+    # Clean up all Playwright resources
+    for client_id in list(page_pool.pages.keys()):
+        await page_pool.cleanup_page(client_id)
+
+    logger.info("Ticker system shutdown complete")

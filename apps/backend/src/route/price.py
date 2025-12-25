@@ -61,19 +61,6 @@ async def stream_price(symbol: str):
         }
     )
 
-    # Set up cleanup on disconnect
-    async def cleanup_on_disconnect():
-        try:
-            async with connection_lock:
-                active_connections[client_id] = weakref.ref(lambda: None)
-            yield
-        finally:
-            # Cleanup will be handled by the ticker module
-            async with connection_lock:
-                if client_id in active_connections:
-                    del active_connections[client_id]
-            logger.info(f"Cleaned up connection for client {client_id}")
-
-    response.background = cleanup_on_disconnect()
+    # Note: StreamingResponse handles cleanup automatically when client disconnects
 
     return response

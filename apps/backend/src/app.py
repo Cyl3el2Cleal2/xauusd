@@ -7,17 +7,27 @@ from src.schemas import UserCreate, UserRead, UserUpdate
 from src.users import auth_backend, current_active_user, fastapi_users
 
 from src.route.price import router
+from src.route.price_history import router as price_history_router
+from src.external.ticker import initialize_ticker, shutdown_ticker
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Not needed if you setup a migration system like Alembic
     await create_db_and_tables()
+
+    # Initialize ticker system
+    await initialize_ticker()
+
     yield
+
+    # Shutdown ticker system
+    await shutdown_ticker()
 
 
 app = FastAPI(lifespan=lifespan)
 
 app.include_router(router)
+app.include_router(price_history_router, prefix="/price", tags=["price-history"])
 
 app.include_router(
     fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"]
