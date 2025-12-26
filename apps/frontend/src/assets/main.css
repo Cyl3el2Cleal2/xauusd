@@ -1,6 +1,19 @@
-@import "tailwindcss";
-@import './base.css';
+/* 1. External fonts at the top */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
+/* 2. Tailwind v4 Framework */
+@import "tailwindcss";
+
+/* 3. Flowbite Configuration */
+@plugin "flowbite/plugin";
+@source "../node_modules/flowbite";
+
+/* 4. Theme Customization (Optional) */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* 5. Your custom styles */
 #app {
   max-width: 1280px;
   margin: 0 auto;
