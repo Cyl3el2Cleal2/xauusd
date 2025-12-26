@@ -19,7 +19,11 @@ async def lifespan(app: FastAPI):
     # Initialize ticker system
     await initialize_ticker()
 
+    # Background scraping is started in initialize_ticker()
+
     yield
+
+    # Background scraper is shutdown in shutdown_ticker()
 
     # Shutdown ticker system
     await shutdown_ticker()
