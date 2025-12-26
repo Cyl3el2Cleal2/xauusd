@@ -143,9 +143,17 @@ async def save_gold_price_to_db(price_data: dict):
     try:
         from src.db import async_session_maker
         async with async_session_maker() as session:
-            # Extract USD price before conversion if available
+            # Extract and clean USD price
             usd_price = price_data.get('usd_price')
             baht_price = price_data.get('price')
+
+            # Convert string prices to floats for database validation
+            if isinstance(usd_price, str):
+                usd_price = usd_price.replace(',', '')
+                try:
+                    usd_price = float(usd_price)
+                except ValueError:
+                    usd_price = None
 
             create_data = GoldPriceCreate(
                 symbol=price_data['symbol'],
@@ -166,16 +174,33 @@ async def save_gold96_price_to_db(price_data: dict):
     try:
         from src.db import async_session_maker
         async with async_session_maker() as session:
+            # Extract and clean prices
+            buy_price = price_data.get('buy_price')
+            sell_price = price_data.get('sell_price')
+
+            # Convert strings to floats for database validation
+            if isinstance(buy_price, str):
+                buy_price = buy_price.replace(',', '')
+            if isinstance(sell_price, str):
+                sell_price = sell_price.replace(',', '')
+
+            try:
+                buy_price = float(buy_price)
+                sell_price = float(sell_price)
+            except ValueError:
+                logger.error(f"Could not convert prices to float: Buy={buy_price}, Sell={sell_price}")
+                return
+
             create_data = Gold96PriceCreate(
                 symbol=price_data['symbol'],
-                buy_price=float(price_data['buy_price'].replace(',', '')),
-                sell_price=float(price_data['sell_price'].replace(',', '')),
+                buy_price=buy_price,
+                sell_price=sell_price,
                 timestamp=datetime.utcnow(),
                 source="goldtraders.or.th"
             )
 
             await PriceService.save_gold96_price(session, create_data)
-            logger.debug(f"Saved gold 96 price to database: Buy={price_data['buy_price']}, Sell={price_data['sell_price']}")
+            logger.debug(f"Saved gold 96 price to database: Buy={buy_price}, Sell={sell_price}")
 
     except Exception as e:
         logger.error(f"Failed to save gold 96 price to database: {e}")
@@ -199,20 +224,36 @@ class BasePriceStreamer:
         """Initialize the page for scraping"""
         page = await page_pool.get_page(client_id)
 
-        try:
-            # Navigate to URL with anti-detection measures
-            await page.goto(self.url, wait_until="domcontentloaded", timeout=45000)
-            await page.wait_for_timeout(3000)  # Wait for page to fully load
+        retry_count = 0
+        max_retries = 3
+        base_timeout = 30000
 
-            # Random mouse movement to appear more human-like
-            await page.mouse.move(100, 100)
-            await page.wait_for_timeout(500)
-            await page.mouse.move(200, 200)
-            await page.wait_for_timeout(500)
+        while retry_count < max_retries:
+            try:
+                # Navigate to URL with anti-detection measures
+                await page.goto(self.url, wait_until="domcontentloaded", timeout=base_timeout)
+                await page.wait_for_timeout(2000)  # Wait for page to fully load
 
-        except Exception as e:
-            logger.warning(f"Error during page initialization for {self.symbol}: {e}")
-            raise
+                # Random mouse movement to appear more human-like
+                await page.mouse.move(100, 100)
+                await page.wait_for_timeout(500)
+                await page.mouse.move(200, 200)
+                await page.wait_for_timeout(500)
+
+                logger.info(f"Page initialized successfully for {self.symbol}")
+                break  # Success, exit retry loop
+
+            except Exception as e:
+                retry_count += 1
+                logger.warning(f"Page initialization attempt {retry_count} failed for {self.symbol}: {e}")
+
+                if retry_count >= max_retries:
+                    raise Exception(f"Failed to initialize page after {max_retries} attempts: {e}")
+
+                # Exponential backoff
+                wait_time = base_timeout * (retry_count)
+                await page.wait_for_timeout(wait_time)
+                logger.info(f"Retrying page initialization for {self.symbol} in {wait_time/1000} seconds...")
 
     def get_adaptive_poll_interval(self) -> float:
         """Get adaptive polling interval based on time and error rate"""
@@ -281,21 +322,24 @@ class GoldSpotStreamer(BasePriceStreamer):
                     selector = '[data-test="instrument-price-last"]'
 
                     try:
-                        await page.wait_for_selector(selector, timeout=15000)
+                        await page.wait_for_selector(selector, timeout=10000)
                         price_element = await page.query_selector(selector)
-                    except:
+                    except Exception as e:
+                        logger.warning(f"Primary selector failed: {e}")
                         # Try alternative selectors
                         alternative_selectors = [
                             '.instrument-price_last',
                             '[data-symbol="XAU"]',
                             'span[class*="price"]',
                             'div[class*="price"]',
+                            '.text-2xl',
                         ]
 
                         for alt_selector in alternative_selectors:
                             try:
                                 price_element = await page.query_selector(alt_selector)
                                 if price_element:
+                                    logger.debug(f"Found price with alternative selector: {alt_selector}")
                                     break
                             except:
                                 price_element = None
@@ -307,12 +351,22 @@ class GoldSpotStreamer(BasePriceStreamer):
                         await self.handle_error(client_id, Exception("Price element not found"))
                         continue
 
-                    # Get price text
+                    # Get price text with validation
                     current_price = await price_element.inner_text()
                     current_price = current_price.strip()
 
+                    if not current_price:
+                        logger.warning("Price text is empty")
+                        await self.handle_error(client_id, Exception("Price text is empty"))
+                        continue
+
                     usd_price = current_price
                     baht_price = convertOunceToThaiBaht(current_price)
+
+                    if not baht_price:
+                        logger.warning(f"Price conversion failed for: {current_price}")
+                        await self.handle_error(client_id, Exception("Price conversion failed"))
+                        continue
 
                     # Only send data if price changed
                     if baht_price and self.last_price != baht_price:
@@ -375,6 +429,11 @@ class Gold96Streamer(BasePriceStreamer):
                     await page.wait_for_timeout(2000)
 
                     # Find buy price element
+                    # Wait for page to be ready
+                    await page.wait_for_load_state("domcontentloaded", timeout=10000)
+                    await page.wait_for_timeout(2000)
+
+                    # Try to find buy price element
                     buy_element = None
                     buy_selectors = [
                         "#DetailPlace_uc_goldprices1_lblBLBuy",
@@ -387,6 +446,7 @@ class Gold96Streamer(BasePriceStreamer):
                         try:
                             buy_element = await page.query_selector(selector)
                             if buy_element:
+                                logger.debug(f"Found buy element with: {selector}")
                                 break
                         except:
                             continue
@@ -404,6 +464,7 @@ class Gold96Streamer(BasePriceStreamer):
                         try:
                             sell_element = await page.query_selector(selector)
                             if sell_element:
+                                logger.debug(f"Found sell element with: {selector}")
                                 break
                         except:
                             continue
