@@ -18,6 +18,7 @@ interface LoginCredentials {
 interface SignupCredentials {
   email: string
   password: string
+  money: number
   is_active?: boolean
   is_superuser?: boolean
   is_verified?: boolean
@@ -41,7 +42,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Actions
   async function toggleAuthModal() {
-    showAuthModal.value = !showAuthModal.value 
+    showAuthModal.value = !showAuthModal.value
     return showAuthModal.value
   }
   async function login(credentials: LoginCredentials) {

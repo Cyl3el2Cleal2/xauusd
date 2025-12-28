@@ -10,6 +10,7 @@ const showLogin = ref(true)
 // Form state
 const email = ref('')
 const password = ref('')
+const money = ref(1000)
 const rememberMe = ref(false)
 const isSubmitting = ref(false)
 
@@ -73,6 +74,7 @@ const handleSubmit = async (e: Event) => {
       const result = await authStore.signup({
         email: email.value.trim(),
         password: password.value,
+        money: money.value,
       })
 
       if (result.success) {
@@ -139,7 +141,7 @@ authStore.initializeAuth()
     :class="{ flex: authStore.showAuthModal }"
   >
     <!-- Backdrop -->
-    <div class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm" @click="closeModal"></div>
+    <div class="fixed inset-0 bg-opacity-50 backdrop-blur-sm" @click="closeModal"></div>
 
     <div class="relative p-4 w-full max-w-md max-h-full z-10">
       <!-- Modal content -->
@@ -286,31 +288,25 @@ authStore.initializeAuth()
             />
           </div>
 
-          <!-- Login-specific options -->
-          <div v-if="showLogin" class="flex items-start my-6">
-            <div class="flex items-center">
-              <input
-                v-model="rememberMe"
-                id="checkbox-remember"
-                type="checkbox"
-                value=""
-                class="w-4 h-4 border border-default-medium rounded-xs bg-neutral-secondary-medium focus:ring-2 focus:ring-brand-soft"
-                :disabled="isSubmitting || authStore.isLoading"
-              />
-              <label for="checkbox-remember" class="ms-2 text-sm font-medium text-heading"
-                >Remember me</label
-              >
-            </div>
-            <a href="#" class="ms-auto text-sm font-medium text-fg-brand hover:underline">
-              Lost Password?
-            </a>
+          <div v-if="!showLogin" class="mb-4">
+            <label for="password" class="block mb-2.5 text-sm font-medium text-heading"
+              >Deposite Money</label
+            >
+            <input
+              v-model="money"
+              type="number"
+              id="money"
+              class="bg-neutral-secondary-medium border border-default-medium text-heading text-sm rounded-base focus:ring-brand focus:border-brand block w-full px-3 py-2.5 shadow-xs placeholder:text-body transition-colors"
+              required
+              minlength="3"
+              :disabled="isSubmitting || authStore.isLoading"
+            />
           </div>
-
           <!-- Submit Button -->
           <button
             type="submit"
             :disabled="buttonDisabled"
-            class="text-white bg-brand box-border border border-transparent hover:bg-brand-strong focus:ring-4 focus:ring-brand-medium shadow-xs font-medium leading-5 rounded-base text-sm px-4 py-2.5 focus:outline-none w-full mb-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            class="bg-brand box-border cursor-pointer border-amber-700 border hover:bg-brand-strong focus:ring-4 focus:ring-brand-medium shadow-xs font-medium leading-5 rounded-base text-sm px-4 py-2.5 focus:outline-none w-full mb-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span
               v-if="isSubmitting || authStore.isLoading"
