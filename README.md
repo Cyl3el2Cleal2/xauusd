@@ -15,6 +15,7 @@ graph TD
     subgraph Backend ["Backend (apps/backend)"]
         API[FastAPI Server]
         Services[Services & Task Processor]
+        Scraper[Playwright Headless]
     end
     
     subgraph Infrastructure [Docker Compose]
@@ -27,6 +28,7 @@ graph TD
     API -->|Read/Write| DB
     API -->|Cache/Queue| Redis
     API --> Services
+    Services --> Scraper
 ```
 
 ## Prerequisites
@@ -59,6 +61,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirement.txt
+
+# Install Playwright browsers
+playwright install
 
 # Run the server
 # The server will run on http://localhost:8000
