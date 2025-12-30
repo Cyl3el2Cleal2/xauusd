@@ -155,7 +155,7 @@ class TradingTaskProcessor:
         # - Update portfolio
         # - Handle risk management
         # - etc.)
-        await asyncio.sleep(2)  # Simulate processing delay
+        await asyncio.sleep(0.1)  # Simulate processing delay
 
         # Calculate actual execution amount
         actual_execution_amount = actual_quantity * current_price_per_unit
