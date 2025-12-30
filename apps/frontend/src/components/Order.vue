@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import OrderDetail from './OrderDetail.vue'
 import OrderModal from './OrderModal.vue'
 import { tradeApi, type TradingHistoryResponse, type TradeResponse } from '@/apis/order'
+import TradingControlPanel from './trading/TradingControlPanel.vue'
 import {
   formatThaiCurrency,
   formatGoldAmount,
@@ -33,6 +34,8 @@ const pageSize = 50
 
 // Polling state
 const pollingOrders = ref<Set<string>>(new Set())
+
+// Trading control store will be used directly in the component
 
 // Transform API response to Transaction interface
 const transformTransaction = (apiData: TradingHistoryResponse): Transaction => {
@@ -185,7 +188,8 @@ const pollOrderStatus = async (orderId: string) => {
       const transactionIndex = transactions.value.findIndex((t) => t.id === orderId)
       if (transactionIndex !== -1) {
         const updatedTransaction: Transaction = {
-          ...transactions.value[transactionIndex],
+          id: transactions.value[transactionIndex]!.id,
+          type: transactions.value[transactionIndex]!.type,
           status: transactionDetail.status,
           // Update with final details from the transaction endpoint
           amount: transactionDetail.amount,
@@ -193,6 +197,7 @@ const pollOrderStatus = async (orderId: string) => {
           total: transactionDetail.total,
           fee: transactionDetail.fee,
           updated_at: transactionDetail.updated_at,
+          timestamp: transactions.value[transactionIndex]!.timestamp,
         }
         transactions.value[transactionIndex] = updatedTransaction
       }
@@ -202,7 +207,9 @@ const pollOrderStatus = async (orderId: string) => {
     // Update the transaction status to failed if polling fails
     const transactionIndex = transactions.value.findIndex((t) => t.id === orderId)
     if (transactionIndex !== -1) {
-      transactions.value[transactionIndex].status = 'failed'
+      if (transactions.value[transactionIndex]) {
+        transactions.value[transactionIndex]!.status = 'failed'
+      }
     }
   } finally {
     pollingOrders.value.delete(orderId)
@@ -258,6 +265,7 @@ watch(
             <h5 class="text-xl font-semibold leading-none text-heading">Gold Trading</h5>
           </div>
         </div>
+
         <button
           @click="openOrderModal"
           class="font-medium text-sm p-2 bg-orange-400 rounded-full text-fg-brand hover:bg-orange-500 transition-colors"
@@ -292,6 +300,11 @@ watch(
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Trading Control Panel -->
+    <div class="mb-6">
+      <TradingControlPanel />
     </div>
 
     <!-- Transaction List -->

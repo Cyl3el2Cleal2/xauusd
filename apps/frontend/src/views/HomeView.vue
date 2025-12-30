@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { usePrice } from '@/apis/price'
+import { useTradingControlStore } from '@/stores/trading-control'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
@@ -32,12 +33,19 @@ interface ChartData {
 }
 
 const { gold96Price, goldSpotPrice, streamSymbol } = usePrice()
+const tradingControlStore = useTradingControlStore()
 
 // Store chart data
 const chartData = ref<ChartData[]>([])
 const buyData = ref<ChartData[]>([])
 const sellData = ref<ChartData[]>([])
 const maxDataPoints = 200
+
+// Get trading status for each symbol
+const getTradingStatus = (symbol: string) => {
+  const control = tradingControlStore.getControlBySymbol(symbol)
+  return control ? control.status : 'online'
+}
 
 // Store last known prices to maintain continuity
 let lastSpotPrice: number | null = null
@@ -106,7 +114,7 @@ const option = ref({
         width: 2,
         color: '#FFD700', // Gold
       },
-      data: [],
+      data: [] as [number, number][],
     },
     {
       name: 'Gold96 Buy',
@@ -117,7 +125,7 @@ const option = ref({
         width: 2,
         color: '#00FF00', // Green
       },
-      data: [],
+      data: [] as [number, number][],
     },
     {
       name: 'Gold96 Sell',
@@ -128,7 +136,7 @@ const option = ref({
         width: 2,
         color: '#FF0000', // Red
       },
-      data: [],
+      data: [] as [number, number][],
     },
   ],
   animationDuration: 300,
@@ -136,64 +144,88 @@ const option = ref({
 
 // Watch for price updates and update chart data
 watch(goldSpotPrice, (val) => {
-  if (!val || !val.price) return
+  const status = getTradingStatus('spot')
 
-  const cleanPrice = parseFloat(val.price.toString().replace(/,/g, ''))
+  let priceToUse: number
+  if (status === 'stop') {
+    priceToUse = 0
+  } else if (status === 'pause') {
+    // Don't update price, keep last known price
+    return
+  } else {
+    // Online - use actual price
+    if (!val || !val.price) return
+    priceToUse = parseFloat(val.price.toString().replace(/,/g, ''))
+  }
+
   const timestamp = Date.now()
-
   const newPrice: ChartData = {
     x: timestamp,
-    y: cleanPrice,
+    y: priceToUse,
   }
 
   chartData.value.push(newPrice)
-  lastSpotPrice = cleanPrice
+  lastSpotPrice = priceToUse
 
   // Update ECharts series data
-  option.value.series[0].data.push([timestamp, cleanPrice])
+  option.value.series[0]?.data?.push([timestamp, priceToUse])
 
   // Limit data array size
   if (chartData.value.length > maxDataPoints) {
     chartData.value.shift()
-    option.value.series[0].data.shift()
+    option.value.series[0]?.data?.shift()
   }
 })
 
 watch(gold96Price, (val) => {
-  if (!val || !val.buy_price) return
+  const status = getTradingStatus('gold96')
+
+  let buyPriceToUse: number
+  let sellPriceToUse: number
+
+  if (status === 'stop') {
+    buyPriceToUse = 0
+    sellPriceToUse = 0
+  } else if (status === 'pause') {
+    // Don't update prices, keep last known prices
+    return
+  } else {
+    // Online - use actual prices
+    if (!val || !val.buy_price) return
+    buyPriceToUse = parseFloat(val.buy_price)
+    sellPriceToUse = parseFloat(val.sell_price)
+  }
 
   console.log(val)
 
-  const buyPrice = parseFloat(val.buy_price)
-  const sellPrice = parseFloat(val.sell_price)
   const timestamp = Date.now()
 
   const newBuyPrice: ChartData = {
     x: timestamp,
-    y: buyPrice,
+    y: buyPriceToUse,
   }
   const newSellPrice: ChartData = {
     x: timestamp,
-    y: sellPrice,
+    y: sellPriceToUse,
   }
 
   buyData.value.push(newBuyPrice)
   sellData.value.push(newSellPrice)
-  lastBuyPrice = buyPrice
-  lastSellPrice = sellPrice
+  lastBuyPrice = buyPriceToUse
+  lastSellPrice = sellPriceToUse
 
   // Update ECharts series data
-  option.value.series[1].data.push([timestamp, buyPrice])
-  option.value.series[2].data.push([timestamp, sellPrice])
+  option.value.series[1]?.data?.push([timestamp, buyPriceToUse])
+  option.value.series[2]?.data?.push([timestamp, sellPriceToUse])
 
   // Limit data arrays to prevent memory lag
   if (buyData.value.length > maxDataPoints) {
     buyData.value.shift()
-    option.value.series[1].data.shift()
+    option.value.series[1]?.data?.shift()
   }
   if (sellData.value.length > maxDataPoints) {
     sellData.value.shift()
-    option.value.series[2].data.shift()
+    option.value.series[2]?.data?.shift()
   }
 })
 
@@ -207,48 +239,67 @@ onMounted(() => {
   // Add continuous data points to maintain line continuity
   updateInterval = window.setInterval(() => {
     const timestamp = Date.now()
-    let hasNewData = false
 
-    // Add current timestamp with last known price to maintain continuity
+    const spotStatus = getTradingStatus('spot')
+    const gold96Status = getTradingStatus('gold96')
+
+    // Always add data points to keep the graph moving every second
+    // Use last known prices for pause, 0 for stop, or maintain for online
+
+    // Handle spot price
     if (lastSpotPrice !== null) {
       const lastDataPoint = chartData.value[chartData.value.length - 1]
       if (!lastDataPoint || timestamp - lastDataPoint.x >= 1000) {
-        chartData.value.push({ x: timestamp, y: lastSpotPrice })
-        option.value.series[0].data.push([timestamp, lastSpotPrice])
+        let priceToUse = lastSpotPrice
+        if (spotStatus === 'stop') {
+          priceToUse = 0
+        }
+
+        chartData.value.push({ x: timestamp, y: priceToUse })
+        option.value.series[0]?.data?.push([timestamp, priceToUse])
 
         if (chartData.value.length > maxDataPoints) {
           chartData.value.shift()
-          option.value.series[0].data.shift()
+          option.value.series[0]?.data?.shift()
         }
-        hasNewData = true
       }
     }
 
+    // Handle gold96 buy price
     if (lastBuyPrice !== null) {
       const lastDataPoint = buyData.value[buyData.value.length - 1]
       if (!lastDataPoint || timestamp - lastDataPoint.x >= 1000) {
-        buyData.value.push({ x: timestamp, y: lastBuyPrice })
-        option.value.series[1].data.push([timestamp, lastBuyPrice])
+        let priceToUse = lastBuyPrice
+        if (gold96Status === 'stop') {
+          priceToUse = 0
+        }
+
+        buyData.value.push({ x: timestamp, y: priceToUse })
+        option.value.series[1]?.data?.push([timestamp, priceToUse])
 
         if (buyData.value.length > maxDataPoints) {
           buyData.value.shift()
-          option.value.series[1].data.shift()
+          option.value.series[1]?.data?.shift()
         }
-        hasNewData = true
       }
     }
 
+    // Handle gold96 sell price
     if (lastSellPrice !== null) {
       const lastDataPoint = sellData.value[sellData.value.length - 1]
       if (!lastDataPoint || timestamp - lastDataPoint.x >= 1000) {
-        sellData.value.push({ x: timestamp, y: lastSellPrice })
-        option.value.series[2].data.push([timestamp, lastSellPrice])
+        let priceToUse = lastSellPrice
+        if (gold96Status === 'stop') {
+          priceToUse = 0
+        }
+
+        sellData.value.push({ x: timestamp, y: priceToUse })
+        option.value.series[2]?.data?.push([timestamp, priceToUse])
 
         if (sellData.value.length > maxDataPoints) {
           sellData.value.shift()
-          option.value.series[2].data.shift()
+          option.value.series[2]?.data?.shift()
         }
-        hasNewData = true
       }
     }
   }, 500)

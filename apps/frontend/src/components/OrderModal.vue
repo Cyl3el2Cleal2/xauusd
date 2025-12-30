@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { usePrice } from '@/apis/price'
-import { tradeApi, type TradeRequest, type Balance } from '@/apis/order'
+import { tradeApi, type TradeRequest, type Balance, type Portfolio } from '@/apis/order'
 import { formatThaiCurrency, formatGoldAmount } from '@/utils'
 
 // Props and emits
@@ -12,6 +12,7 @@ interface Props {
 
 interface Emits {
   (e: 'close'): void
+  (e: 'open'): void
   (e: 'trade-success', trade: any): void
 }
 
@@ -28,7 +29,7 @@ const amount = ref('')
 const isSubmitting = ref(false)
 const error = ref('')
 const successMessage = ref('')
-const balance = ref<Balance | null>(null)
+const balance = ref<Portfolio | Balance | null>(null)
 const isLoadingBalance = ref(false)
 
 // Form validation
@@ -117,7 +118,8 @@ const validateAmount = () => {
 
   // Check if user has sufficient balance for buy orders
   if (orderType.value === 'buy' && balance.value) {
-    const maxAvailable = balance.value.available_balance
+    const maxAvailable =
+      'available_balance' in balance.value ? balance.value.available_balance : balance.value.balance
     if (amountNum > maxAvailable) {
       amountError.value = `Insufficient balance. Available: ${formatThaiCurrency(maxAvailable)}`
       return false
@@ -126,7 +128,10 @@ const validateAmount = () => {
 
   // Check if user has sufficient gold for sell orders
   if (orderType.value === 'sell' && balance.value) {
-    const goldAvailable = balance.value.gold_holdings
+    const goldAvailable =
+      'gold_holdings' in balance.value
+        ? balance.value.gold_holdings
+        : balance.value.holdings.gold96_baht
     const goldToSell = calculatedGoldAmount.value
     if (goldToSell > goldAvailable) {
       amountError.value = `Insufficient gold. Available: ${formatGoldAmount(goldAvailable)}`
@@ -196,6 +201,10 @@ const resetForm = () => {
   amountError.value = ''
   error.value = ''
   successMessage.value = ''
+}
+
+const openModal = () => {
+  emit('open')
 }
 
 const closeModal = () => {
@@ -303,13 +312,23 @@ const handleBackdropClick = (event: MouseEvent) => {
             <div>
               <div class="text-gray-600 mb-1">Available Balance</div>
               <div class="font-semibold text-gray-900">
-                {{ formatThaiCurrency(balance.balance) }}
+                {{
+                  formatThaiCurrency(
+                    'balance' in balance ? balance.balance : balance.available_balance,
+                  )
+                }}
               </div>
             </div>
             <div>
               <div class="text-gray-600 mb-1">Gold Holdings</div>
               <div class="font-semibold text-gray-900">
-                {{ formatThaiCurrency(balance.holdings_value.gold96) }}
+                {{
+                  formatThaiCurrency(
+                    'holdings_value' in balance
+                      ? balance.holdings_value.gold96
+                      : balance.gold_holdings,
+                  )
+                }}
               </div>
             </div>
           </div>
