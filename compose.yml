@@ -8,6 +8,29 @@ services:
       POSTGRES_DB: backend
     ports:
       - '5432:5432'
+
+  backend:
+    build:
+      context: ./apps/backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/backend
+      REDIS_URL: redis://:example@redis:6379
+    ports:
+      - '8000:8000'
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./apps/frontend
+    ports:
+      - '3000:80'
+    depends_on:
+      - backend
+    restart: unless-stopped
+
   redis:
     image: redis:8.4-alpine
     restart: unless-stopped
