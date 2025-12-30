@@ -79,6 +79,7 @@ export const getStatusBadgeClass = (status: string): string => {
 export interface Transaction {
   id: string
   type: 'buy' | 'sell'
+  symbol: string
   amount: number
   price: number
   total: number

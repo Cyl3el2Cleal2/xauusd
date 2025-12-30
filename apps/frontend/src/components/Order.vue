@@ -42,6 +42,7 @@ const transformTransaction = (apiData: TradingHistoryResponse): Transaction => {
   return {
     id: apiData.id,
     type: apiData.transaction_type,
+    symbol: apiData.symbol,
     amount: apiData.quantity,
     price: apiData.price_per_unit,
     total: apiData.total_amount,

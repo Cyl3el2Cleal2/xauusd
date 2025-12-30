@@ -30,20 +30,28 @@ defineProps<Props>()
         <span :class="getTransactionTypeClass(transaction.type)" class="text-lg">
           {{ getTransactionIcon(transaction.type) }}
         </span>
-        <span :class="getTransactionTypeClass(transaction.type)" class="font-medium capitalize">
+        <span :class="getTransactionTypeClass(transaction.type)" class="text-sm font-medium capitalize">
           {{ transaction.type }}
+        </span>
+        <span class="uppercase text-sm px-1 bg-orange-400 rounded-full">
+
+        {{ transaction.symbol }}
         </span>
       </div>
 
       <!-- Amount -->
       <div>
-        <div class="font-medium text-heading">{{ transaction.amount ? formatGoldAmount(transaction.amount) : '-' }}</div>
+        <div class="font-medium text-heading">
+          {{ transaction.amount ? formatGoldAmount(transaction.amount) : '-' }}
+        </div>
         <div class="text-xs text-body">Baht</div>
       </div>
 
       <!-- Price -->
       <div>
-        <div class="font-medium text-heading">{{ transaction.price ? formatThaiCurrency(transaction.price) : '...' }}</div>
+        <div class="font-medium text-heading">
+          {{ transaction.price ? formatThaiCurrency(transaction.price) : '...' }}
+        </div>
         <div class="text-xs text-body">per Baht</div>
       </div>
 
