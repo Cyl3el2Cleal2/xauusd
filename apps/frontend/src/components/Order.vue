@@ -9,15 +9,7 @@ import OrderDetail from './OrderDetail.vue'
 import OrderModal from './OrderModal.vue'
 import { tradeApi, type TradingHistoryResponse, type TradeResponse } from '@/apis/order'
 import TradingControlPanel from './trading/TradingControlPanel.vue'
-import {
-  formatThaiCurrency,
-  formatGoldAmount,
-  formatTimestamp,
-  getTransactionTypeClass,
-  getTransactionIcon,
-  getStatusBadgeClass,
-  type Transaction,
-} from '@/utils'
+import { formatThaiCurrency, formatGoldAmount, type Transaction } from '@/utils'
 
 const authStore = useAuthStore()
 
@@ -38,7 +30,7 @@ const pollingOrders = ref<Set<string>>(new Set())
 // Trading control store will be used directly in the component
 
 // Transform API response to Transaction interface
-const transformTransaction = (apiData: TradingHistoryResponse): Transaction => {
+const transformTransaction = (apiData: TradeResponse): Transaction => {
   return {
     id: apiData.id,
     type: apiData.transaction_type,
@@ -48,7 +40,7 @@ const transformTransaction = (apiData: TradingHistoryResponse): Transaction => {
     total: apiData.total_amount,
     timestamp: apiData.created_at,
     status: apiData.status,
-    fee: 0, // API doesn't provide fee in history response
+    fee: apiData.fee || 0,
   }
 }
 
@@ -147,10 +139,11 @@ const handleTradeSuccess = (trade: TradeResponse) => {
   // Add the new transaction to the list
   const newTransaction: Transaction = {
     id: trade.id,
-    type: trade.type,
-    amount: trade.amount,
-    price: trade.price,
-    total: trade.total,
+    symbol: trade.symbol,
+    type: trade.type || trade.transaction_type,
+    amount: trade.amount || trade.quantity,
+    price: trade.price || trade.price_per_unit,
+    total: trade.total || trade.total_amount,
     timestamp: trade.created_at,
     status: trade.status,
     fee: trade.fee || 0,
@@ -188,19 +181,39 @@ const pollOrderStatus = async (orderId: string) => {
       // Update the transaction in the list with detailed information
       const transactionIndex = transactions.value.findIndex((t) => t.id === orderId)
       if (transactionIndex !== -1) {
-        const updatedTransaction: Transaction = {
-          id: transactions.value[transactionIndex]!.id,
-          type: transactions.value[transactionIndex]!.type,
-          status: transactionDetail.status,
-          // Update with final details from the transaction endpoint
-          amount: transactionDetail.amount,
-          price: transactionDetail.price,
-          total: transactionDetail.total,
-          fee: transactionDetail.fee,
-          updated_at: transactionDetail.updated_at,
-          timestamp: transactions.value[transactionIndex]!.timestamp,
+        const currentTransaction = transactions.value[transactionIndex]
+        if (!currentTransaction) return
+
+        // Safely parse numeric values
+        const safeParseNumber = (value: any, fallback: number) => {
+          if (value === null || value === undefined || value === '') return fallback
+          const parsed = parseFloat(value)
+          return isNaN(parsed) ? fallback : parsed
         }
-        transactions.value[transactionIndex] = updatedTransaction
+
+        // Parse values safely using correct API property names
+        const newAmount = safeParseNumber(transactionDetail.quantity, currentTransaction.amount)
+        const newPrice = safeParseNumber(transactionDetail.price_per_unit, currentTransaction.price)
+        const newTotal = safeParseNumber(transactionDetail.total_amount, currentTransaction.total)
+        const newFee = safeParseNumber(transactionDetail.fee, currentTransaction.fee)
+
+        // Create a new transaction object with updated values
+        const updatedTransaction: Transaction = {
+          id: currentTransaction.id,
+          type: transactionDetail.transaction_type || currentTransaction.type,
+          symbol: transactionDetail.symbol || currentTransaction.symbol,
+          status: transactionDetail.status,
+          // Update with safely parsed values using correct API properties
+          amount: newAmount,
+          price: newPrice,
+          total: newTotal,
+          fee: newFee,
+          timestamp: currentTransaction.timestamp,
+          updated_at: transactionDetail.updated_at || currentTransaction.updated_at,
+        }
+
+        // Use splice for reactivity
+        transactions.value.splice(transactionIndex, 1, updatedTransaction)
       }
     }
   } catch (error) {
@@ -208,8 +221,14 @@ const pollOrderStatus = async (orderId: string) => {
     // Update the transaction status to failed if polling fails
     const transactionIndex = transactions.value.findIndex((t) => t.id === orderId)
     if (transactionIndex !== -1) {
-      if (transactions.value[transactionIndex]) {
-        transactions.value[transactionIndex]!.status = 'failed'
+      const currentTransaction = transactions.value[transactionIndex]
+      if (currentTransaction) {
+        const failedTransaction: Transaction = {
+          ...currentTransaction,
+          status: 'failed' as const,
+        }
+        // Use splice for reactivity
+        transactions.value.splice(transactionIndex, 1, failedTransaction)
       }
     }
   } finally {

@@ -16,6 +16,14 @@ export interface TradeResponse {
   fee: number
   created_at: string
   updated_at: string
+  user_id: string
+  transaction_type: 'buy' | 'sell'
+  quantity: number
+  price_per_unit: number
+  total_amount: number
+  processing_id: string
+  poll_url: string
+  error_message: any
 }
 
 export interface TradingHistoryResponse {
@@ -122,11 +130,8 @@ export const tradeApi = {
   /**
    * Get trading history with pagination
    */
-  getTradingHistory: async (
-    limit: number = 50,
-    offset: number = 0,
-  ): Promise<TradingHistoryResponse[]> => {
-    const response = await apiClient.get<TradingHistoryResponse[]>('/trading/history', {
+  getTradingHistory: async (limit: number = 50, offset: number = 0): Promise<TradeResponse[]> => {
+    const response = await apiClient.get<TradeResponse[]>('/trading/history', {
       params: { limit, offset },
     })
     return response.data
