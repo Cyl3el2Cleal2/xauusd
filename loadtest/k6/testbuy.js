@@ -1,6 +1,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
+const JWT = 'changeit'
 // 1. Define the configuration
 export const options = {
     iterations: 100, // Exactly 1000 total requests
@@ -20,7 +21,7 @@ export default function () {
     const params = {
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0MjExZjk0Mi0yMjY5LTQxZTctODFiYi1jYmIzNWY3ZGFhZDkiLCJhdWQiOlsiZmFzdGFwaS11c2VyczphdXRoIl0sImV4cCI6MTc2NzEwMzM2Mn0.ePsyBYFa8qdw2Qmi0MrLhTO24gKz40A7Uckk9-gksDg',
+            'Authorization': `Bearer ${JWT}`,
             'Accept': 'application/json',
             'User-Agent': 'k6-load-test',
         },

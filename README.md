@@ -86,3 +86,23 @@ The frontend will typically run on `http://localhost:5173` (check the terminal o
 - `apps/backend`: FastAPI application source code, tests, and migration scripts.
 - `apps/frontend`: Vue 3 application source code.
 - `compose.yml`: Docker Compose configuration for local development infrastructure (Postgres, Redis).
+
+## Load Testing
+
+We use [k6](https://k6.io/) for load testing.
+
+### Prerequisites
+
+- Install k6: https://k6.io/docs/get-started/installation/
+
+### Running Load Tests
+
+The load test scripts are located in `loadtest/k6/`.
+
+To run the buy transaction test:
+
+```bash
+k6 run loadtest/k6/testbuy.js
+```
+
+> **Note**: use your own JWT token in the script
