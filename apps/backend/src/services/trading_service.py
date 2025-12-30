@@ -127,14 +127,28 @@ class TradingService:
         data: Optional[Dict[str, Any]] = None
     ) -> PollingResponse:
         """Create polling response from transaction"""
-        # Ensure data is always a dictionary for completed/failed transactions
-        response_data = data or {}
+        # Convert Transaction object to dictionary for the data field
+        transaction_data = {
+            "id": transaction.id,
+            "user_id": transaction.user_id,
+            "symbol": transaction.symbol,
+            "transaction_type": transaction.transaction_type,
+            "quantity": transaction.quantity,
+            "price_per_unit": transaction.price_per_unit,
+            "total_amount": transaction.total_amount,
+            "status": transaction.status,
+            "processing_id": transaction.processing_id,
+            "poll_url": transaction.poll_url,
+            "error_message": transaction.error_message,
+            "created_at": transaction.created_at,
+            "updated_at": transaction.updated_at
+        }
 
         return PollingResponse(
             transaction_id=transaction.id,
             status=transaction.status,
             message=message,
-            data=transaction,
+            data=transaction_data,
             completed_at=transaction.updated_at if transaction.status in ["completed", "failed"] else None
         )
 
