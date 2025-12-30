@@ -170,8 +170,8 @@ const pollOrderStatus = async (orderId: string) => {
   try {
     const finalStatus = await tradeApi.pollOrderUntilComplete(
       orderId,
-      2000, // Poll every 2 seconds
-      30, // Maximum 30 attempts (1 minute total)
+      3000, // Poll every 3 seconds
+      60, // Maximum 60 attempts (3 minute total)
     )
 
     // Fetch final transaction details when completed or failed

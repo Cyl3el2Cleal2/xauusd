@@ -23,7 +23,7 @@ export interface TradeResponse {
   total_amount: number
   processing_id: string
   poll_url: string
-  error_message: any
+  error_message: string
 }
 
 export interface TradingHistoryResponse {

@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import {
-  useTradingControlStore,
-  type TradingControl,
-  type TradingStatus,
-} from '@/stores/trading-control'
+import { useTradingControlStore, type TradingStatus } from '@/stores/trading-control'
 
 // Store
 const tradingControlStore = useTradingControlStore()
@@ -67,15 +63,6 @@ const getStatusBadgeColor = (status: TradingStatus) => {
     default:
       return 'bg-gray-100 text-gray-800 border-gray-200'
   }
-}
-
-const formatLastSavedTime = (date: Date | null) => {
-  if (!date) return ''
-  return new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(date)
 }
 </script>
 

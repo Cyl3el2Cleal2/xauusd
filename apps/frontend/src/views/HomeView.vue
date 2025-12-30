@@ -321,6 +321,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+main {
+  padding-top: 80px; /* Account for fixed navbar height */
+  min-height: 100vh;
+  background-color: #f8fafc; /* Light background to ensure navbar is visible */
+}
+
 .chart-container {
   width: 100%;
   height: 500px;
@@ -330,5 +336,23 @@ onUnmounted(() => {
 .chart {
   width: 100%;
   height: 100%;
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  main {
+    padding: 80px 0 0 0; /* Only top padding for mobile */
+  }
+
+  .chart-container {
+    padding: 0;
+    height: 400px;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-container {
+    height: 350px;
+  }
 }
 </style>
