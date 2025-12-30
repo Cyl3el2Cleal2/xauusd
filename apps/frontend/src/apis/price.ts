@@ -17,13 +17,22 @@ export interface GoldTradePrice {
   type: string
 }
 
-const usePrice = () => {
-  const baseURL = api.defaults.baseURL
-  const gold96Price = ref<GoldTradePrice | null>(null)
-  const goldSpotPrice = ref<SpotPrice | null>(null)
+// Singleton instance for shared state
+const baseURL = api.defaults.baseURL
+const gold96Price = ref<GoldTradePrice | null>(null)
+const goldSpotPrice = ref<SpotPrice | null>(null)
+const activeStreams = new Map<golds, EventSource>()
 
+const usePrice = () => {
   const streamSymbol = (price: Ref, symbol: golds) => {
+    // Close existing stream if it exists
+    if (activeStreams.has(symbol)) {
+      activeStreams.get(symbol)?.close()
+    }
+
     const stream = new EventSource(`${baseURL}/stream/price/${symbol}`)
+    activeStreams.set(symbol, stream)
+
     stream.onmessage = (event) => {
       try {
         // Parse JSON data from SSE
@@ -34,6 +43,11 @@ const usePrice = () => {
         // Fallback to raw string if parsing fails
         price.value = event.data
       }
+    }
+
+    stream.onerror = (error) => {
+      console.error(`Stream error for ${symbol}:`, error)
+      activeStreams.delete(symbol)
     }
   }
 

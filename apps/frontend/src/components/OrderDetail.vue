@@ -21,7 +21,7 @@ defineProps<Props>()
     <div class="grid grid-cols-6 gap-4 items-center">
       <!-- Transaction ID & Time -->
       <div>
-        <div class="font-medium text-heading text-sm">{{ transaction.id }}</div>
+        <!-- <div class="font-medium text-heading text-sm">{{ transaction.id }}</div> -->
         <div class="text-xs text-body">{{ formatTimestamp(transaction.timestamp) }}</div>
       </div>
 
@@ -37,14 +37,14 @@ defineProps<Props>()
 
       <!-- Amount -->
       <div>
-        <div class="font-medium text-heading">{{ formatGoldAmount(transaction.amount) }}</div>
-        <div class="text-xs text-body">Gold</div>
+        <div class="font-medium text-heading">{{ transaction.amount ? formatGoldAmount(transaction.amount) : '-' }}</div>
+        <div class="text-xs text-body">Baht</div>
       </div>
 
       <!-- Price -->
       <div>
-        <div class="font-medium text-heading">{{ formatThaiCurrency(transaction.price) }}</div>
-        <div class="text-xs text-body">per</div>
+        <div class="font-medium text-heading">{{ transaction.price ? formatThaiCurrency(transaction.price) : '...' }}</div>
+        <div class="text-xs text-body">per Baht</div>
       </div>
 
       <!-- Total -->

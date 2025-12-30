@@ -18,7 +18,7 @@ export const formatThaiCurrency = (value: number): string => {
  * @returns Formatted amount string with "oz" suffix
  */
 export const formatGoldAmount = (value: number): string => {
-  return `${value.toFixed(1)} oz`
+  return `${value.toFixed(3)}`
 }
 
 /**
@@ -83,6 +83,7 @@ export interface Transaction {
   price: number
   total: number
   timestamp: string
-  status: 'completed' | 'pending' | 'failed'
+  status: 'completed' | 'pending' | 'failed' | 'processing'
   fee: number
+  updated_at?: string
 }

@@ -64,7 +64,7 @@ const option = ref({
     },
   },
   legend: {
-    data: ['Gold Spot Price', 'Buy Price', 'Sell Price'],
+    data: ['Gold Spot', 'Gold96 Buy', 'Gold96 Sell'],
     top: 30,
   },
   grid: {
@@ -88,7 +88,7 @@ const option = ref({
     min: 'dataMin',
     max: 'dataMax',
     // Adds a little "padding" so the line doesn't touch the top/bottom edges
-    boundaryGap: ['10%', '10%'],
+    boundaryGap: ['20%', '20%'],
     splitLine: {
       show: false,
       lineStyle: {
@@ -98,7 +98,7 @@ const option = ref({
   },
   series: [
     {
-      name: 'Gold Spot Price',
+      name: 'Gold Spot',
       type: 'line',
       smooth: true,
       symbol: 'none',
@@ -109,7 +109,7 @@ const option = ref({
       data: [],
     },
     {
-      name: 'Buy Price',
+      name: 'Gold96 Buy',
       type: 'line',
       smooth: true,
       symbol: 'none',
@@ -120,7 +120,7 @@ const option = ref({
       data: [],
     },
     {
-      name: 'Sell Price',
+      name: 'Gold96 Sell',
       type: 'line',
       smooth: true,
       symbol: 'none',
@@ -160,10 +160,12 @@ watch(goldSpotPrice, (val) => {
 })
 
 watch(gold96Price, (val) => {
-  if (!val) return
+  if (!val || !val.buy_price) return
 
-  const buyPrice = parseFloat(val.buy_price.toString().replace(/,/g, ''))
-  const sellPrice = parseFloat(val.sell_price.toString().replace(/,/g, ''))
+  console.log(val)
+
+  const buyPrice = parseFloat(val.buy_price)
+  const sellPrice = parseFloat(val.sell_price)
   const timestamp = Date.now()
 
   const newBuyPrice: ChartData = {
