@@ -9,7 +9,9 @@ from src.users import auth_backend, current_active_user, fastapi_users
 
 from src.route.price import router
 from src.route.price_history import router as price_history_router
+from src.route.trading import router as trading_router
 from src.external.ticker import initialize_ticker, shutdown_ticker
+from src.services.task_processor import start_task_processor, stop_task_processor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,7 +23,13 @@ async def lifespan(app: FastAPI):
 
     # Background scraping is started in initialize_ticker()
 
+    # Start task processor for trading queue
+    await start_task_processor()
+
     yield
+
+    # Stop task processor
+    await stop_task_processor()
 
     # Background scraper is shutdown in shutdown_ticker()
 
@@ -46,6 +54,7 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(price_history_router, prefix="/price", tags=["price-history"])
+app.include_router(trading_router)
 
 app.include_router(
     fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"]
