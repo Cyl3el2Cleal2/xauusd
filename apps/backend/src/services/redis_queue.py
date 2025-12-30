@@ -5,6 +5,10 @@ from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 import redis.asyncio as redis
 import logging
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -12,29 +16,23 @@ logger = logging.getLogger(__name__)
 class RedisQueueManager:
     """Redis queue manager for async task processing"""
 
-    def __init__(self, host: str = "localhost", port: int = 6379, password: str = "example", db: int = 0):
-        self.host = host
-        self.port = port
-        self.password = password
-        self.db = db
+    def __init__(self, redis_url: str = None):
+        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://:example@localhost:6379/0")
         self.redis_client: Optional[redis.Redis] = None
         self.is_connected = False
 
     async def connect(self):
         """Connect to Redis"""
         try:
-            self.redis_client = redis.Redis(
-                host=self.host,
-                port=self.port,
-                password=self.password,
-                db=self.db,
+            self.redis_client = redis.from_url(
+                self.redis_url,
                 decode_responses=True
             )
 
             # Test connection
             await self.redis_client.ping()
             self.is_connected = True
-            logger.info(f"Connected to Redis at {self.host}:{self.port}")
+            logger.info(f"Connected to Redis at {self.redis_url}")
 
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")

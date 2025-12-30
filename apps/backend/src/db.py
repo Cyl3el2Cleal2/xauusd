@@ -7,7 +7,12 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Index
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = "postgresql+asyncpg://user:password@localhost:5432/backend"
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/backend")
 
 
 class Base(DeclarativeBase):
